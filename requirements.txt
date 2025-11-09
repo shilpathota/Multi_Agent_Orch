@@ -1,0 +1,6 @@
+langgraph>=0.2.39
+langchain>=0.2.16
+langchain-community>=0.2.16
+mcp>=0.1.0
+pydantic>=2.9.0
+python-dotenv>=1.0.1
