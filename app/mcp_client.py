@@ -1,8 +1,7 @@
 # app/mcp_client.py
-import asyncio
+import json
 from contextlib import AsyncExitStack
 from typing import Any, Dict, List, Optional
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -17,9 +16,8 @@ class MCPClient:
         self._stack = AsyncExitStack()
         await self._stack.__aenter__()
         params = StdioServerParameters(command=self.server_cmd, args=self.server_args)
-        stdio = await self._stack.enter_async_context(stdio_client(params))
-        self.stdio, self.write = stdio
-        self.session = await self._stack.enter_async_context(ClientSession(self.stdio, self.write))
+        read_stream, write_stream = await self._stack.enter_async_context(stdio_client(params))
+        self.session = await self._stack.enter_async_context(ClientSession(read_stream, write_stream))
         await self.session.initialize()
         return self
 
@@ -32,11 +30,42 @@ class MCPClient:
 
     async def call_tool(self, name: str, **kwargs) -> Any:
         result = await self.session.call_tool(name, arguments=kwargs)
-        # gather text parts or typed objects
         outs = []
         for c in (result.content or []):
-            if hasattr(c, "text") and c.text:
+            # text parts
+            if getattr(c, "text", None):
                 outs.append(c.text)
+            # typed data parts (e.g., {"type": "application/json", "data": ...})
             elif hasattr(c, "type") and hasattr(c, "data"):
                 outs.append({"type": c.type, "data": c.data})
-        return outs[0] if len(outs) == 1 else outs
+
+        # normalize common shapes
+        if len(outs) == 1:
+            one = outs[0]
+            # single JSON string -> parse
+            if isinstance(one, str):
+                s = one.strip()
+                if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+                    try:
+                        return json.loads(s)
+                    except Exception:
+                        pass
+                return one
+            # {type,data} envelope -> unwrap json
+            if isinstance(one, dict) and "type" in one and "data" in one:
+                if str(one["type"]).lower() in ("application/json", "json"):
+                    return one["data"]
+                return one
+            return one
+
+        # list of JSON strings -> parse each
+        if outs and all(isinstance(x, str) for x in outs):
+            parsed = []
+            for x in outs:
+                try:
+                    parsed.append(json.loads(x))
+                except Exception:
+                    parsed.append(x)
+            return parsed
+
+        return outs

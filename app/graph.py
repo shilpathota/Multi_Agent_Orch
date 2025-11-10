@@ -1,11 +1,18 @@
 # app/graph.py
-from typing import Dict, Any
+from typing import Dict, Any, List, TypedDict
 from langgraph.graph import StateGraph, END
 
-def build_graph(planner_node, executor_node):
-    class S(dict): pass  # minimal dict state
 
-    graph = StateGraph(S)
+class GraphState(TypedDict, total=False):
+    topic: str
+    k: int
+    plan: Dict[str, Any]
+    result_raw: Any
+    final: List[Dict[str, Any]]
+
+def build_graph(planner_node, executor_node):
+
+    graph = StateGraph(GraphState)
     graph.add_node("plan", planner_node)
     graph.add_node("execute", executor_node)
 

@@ -3,7 +3,7 @@ import json, os
 from pydantic import BaseModel
 from typing import Dict, Any
 
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 
 MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
 
@@ -23,10 +23,19 @@ Return STRICT JSON with keys: tool, args.
 No extra text.
 """
 
+
 def make_planner():
     llm = get_llm()
+
     def plan_node(state: Dict[str, Any]) -> Dict[str, Any]:
-        topic = state["topic"]
+        # DEBUG LINE (remove later)
+        print("Planner received state:", state, flush=True)
+        topic = state.get("topic")
+        if not topic:
+            # Give a readable error instead of KeyError
+            raise ValueError(
+                "Missing 'topic' in state. Invoke the graph with {'topic': '<your topic>'}."
+            )
         prompt = f"{PLANNER_SYSTEM}\nUser topic: {topic}\nJSON:"
         resp = llm.invoke(prompt).content.strip()
         try:
@@ -36,6 +45,7 @@ def make_planner():
             plan = Plan(tool="mock_search", args={"topic": topic})
         state["plan"] = plan.model_dump()
         return state
+
     return plan_node
 
 def make_executor(mcp_client):
